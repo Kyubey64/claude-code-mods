@@ -1,0 +1,20 @@
+{
+  "name": "usage-bar",
+  "version": "0.3.0",
+  "description": "Session panel: context and usage limits, model, mode, agents and notifications, beside the transcript",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "ping": {
+      "type": "boolean",
+      "title": "Ping for fresh usage",
+      "description": "Send one tiny Haiku request when no session has had fresh usage figures for a while",
+      "default": true
+    },
+    "pingMinutes": {
+      "type": "number",
+      "title": "Ping interval (minutes)",
+      "description": "Minutes without a fresh usage reading from any session before a ping",
+      "default": 10
+    }
+  }
+}

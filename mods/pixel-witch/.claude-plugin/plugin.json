@@ -1,0 +1,15 @@
+{
+  "name": "pixel-witch",
+  "version": "0.3.0",
+  "description": "A chibi pixel witch who wanders your consoles, follows you between them, and sometimes picks fights",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "skin": {
+      "type": "string",
+      "title": "Witch skin",
+      "description": "How the witch who follows you looks; a visitor and a replacement pick another",
+      "options": ["classic", "starlight", "moonbroom", "bluebell", "goldie", "random"],
+      "default": "classic"
+    }
+  }
+}
