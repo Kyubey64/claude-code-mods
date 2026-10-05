@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { IDLE_PINGS, asShared, freshest, isPaused, isPingDue, nextIdle, pickLimits, rose } from './fresh'
+import { IDLE_PINGS, PINGS_OFF_KEY, asShared, freshest, isPaused, isPingDue, nextIdle, pickLimits, rose } from './fresh'
 import type { Shared } from './fresh'
 
 const MIN = 60_000
@@ -52,4 +52,23 @@ test('an hour of idle pings pauses, and rising usage keeps them going', async ()
   expect(rose([at(41)], [at(2)])).toBe(false)
   // Real use anywhere ends the pause.
   expect(isPaused({ at: 9, rateLimits: [at(45)], source: 'use', idlePings: 0 })).toBe(false)
+})
+
+test('/usage-ping off and on flip the switch every console reads', async ($, on) => {
+  const writes: unknown[] = []
+  on('store.set', ($, e) => {
+    if (e.key === PINGS_OFF_KEY) writes.push(e.value)
+    return { value: undefined }
+  })
+  const run = (args: string) =>
+    $.command.run({
+      command: 'usage-ping',
+      args,
+      origin: { kind: 'composer' },
+      presentation: { isFullscreen: true, columns: 160 },
+    })
+  const off = await run('off')
+  expect(off.text).toMatch(/off in every console/)
+  await run('on')
+  expect(writes).toEqual([true, false])
 })

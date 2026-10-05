@@ -47,7 +47,8 @@ A panel docked on the right while the prompt stays at the bottom:
   timestamped.
 
 On narrow or non-fullscreen terminals it falls back to a one-line status bar.
-Commands: `/hud`, `/usage-ping`.
+Commands: `/hud`, `/usage-ping` (ping now), `/usage-ping off` / `on` (automatic
+pings in every console).
 
 ## Requirements
 

@@ -3,7 +3,7 @@ import type { EngineInterface, Register, SessionRateLimit } from 'claude-code'
 
 import { crossed, limitName, meter, shortModel, span, statusLine, tokens } from './format'
 import type { Extras } from './format'
-import { SHARED_KEY, asShared, freshest, isPaused, isPingDue, nextIdle, pickLimits, sameLimits } from './fresh'
+import { PINGS_OFF_KEY, SHARED_KEY, asShared, freshest, isPaused, isPingDue, nextIdle, pickLimits, sameLimits } from './fresh'
 import type { Shared } from './fresh'
 import { addNote, agentRows, clock, levelColor, modeFrom, restOfHint, statusMark } from './panel'
 import type { Hud } from '../types'
@@ -36,6 +36,8 @@ let pushed: SessionRateLimit[] = []
 // The panel: whether it is docked beside the transcript (then the prompt's
 // footer lines and toasts move into it), and what it shows.
 const panel = { isDocked: false, view: undefined as Hud | undefined }
+// Whether the pings are off in every console, as the store last said.
+let arePingsOff = false
 let pending: Partial<Hud> = {}
 let notes: Hud['notes'] = []
 let agentStatus = new Map<string, string>()
@@ -52,12 +54,14 @@ async function notify($: EngineInterface, text: string, from?: string) {
 // panel; resolves the reading the store held and when the freshest reading
 // from any source came in.
 async function refresh($: EngineInterface): Promise<{ shared: Shared | undefined; lastFresh: number }> {
-  const [usage, now, model, stored] = await Promise.all([
+  const [usage, now, model, stored, off] = await Promise.all([
     $.session.usage(),
     $.clock.now(),
     $.session.model(),
     $.store.get(SHARED_KEY),
+    $.store.get(PINGS_OFF_KEY),
   ])
+  arePingsOff = off === true
   const shared = asShared(stored)
   extras.model = model
   extras.startedAt = usage.startedAt
@@ -75,8 +79,8 @@ async function refresh($: EngineInterface): Promise<{ shared: Shared | undefined
   const latest: Shared | undefined = isNewer
     ? { at: ownAt, rateLimits: own, source: ownSource, idlePings: ownIdle }
     : shared
-  const isIdle = ping.isOn && isPaused(latest)
-  extras.note = isIdle ? 'ping paused (idle)' : undefined
+  const isIdle = ping.isOn && !arePingsOff && isPaused(latest)
+  extras.note = arePingsOff ? 'pings off' : isIdle ? 'ping paused (idle)' : undefined
   $.ui.status(panel.isDocked ? undefined : statusLine({ ...usage, rateLimits }, extras, now))
 
   const fromElsewhere = !isNewer && shared !== undefined && shared.at > ownAt
@@ -88,7 +92,9 @@ async function refresh($: EngineInterface): Promise<{ shared: Shared | undefined
       percent: limit.percentUsed,
       ...(limit.resetsAt ? { resetsIn: span(Date.parse(limit.resetsAt) - now) } : {}),
     })),
-    limitsNote: isIdle
+    limitsNote: arePingsOff
+      ? 'pings off in every console'
+      : isIdle
       ? 'pings paused: everything idle'
       : fromElsewhere
         ? `from another console ${span(now - (shared?.at ?? now))} ago`
@@ -140,7 +146,7 @@ async function sendPing($: EngineInterface, isAsked: boolean) {
 
 async function tick($: EngineInterface) {
   const { shared, lastFresh } = await refresh($)
-  if (!ping.isOn || isPaused(shared)) return
+  if (!ping.isOn || arePingsOff || isPaused(shared)) return
   if (isPingDue(await $.clock.now(), lastFresh, ping.everyMs)) await sendPing($, false)
 }
 
@@ -174,6 +180,14 @@ async function publish($: EngineInterface) {
   })
 }
 
+// Turns the automatic pings off or on in every console.
+async function setPingsOff($: EngineInterface, isOff: boolean) {
+  await $.store.set(PINGS_OFF_KEY, isOff)
+  arePingsOff = isOff
+  await refresh($).catch(() => undefined)
+  await publish($).catch(() => undefined)
+}
+
 function describe(limits: SessionRateLimit[]): string {
   return limits.map(limit => `${limitName(limit.kind)} ${limit.percentUsed}%`).join(', ') || 'none'
 }
@@ -186,7 +200,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'usage-ping',
-      description: 'Refresh the usage limits now with one tiny Haiku request',
+      description: 'Ping for fresh usage now; `off` / `on` stops or resumes automatic pings in every console',
     })
     await $.command.register({ name: 'hud', description: 'Open the session panel' })
     await readBranch($).catch(() => undefined)
@@ -209,7 +223,17 @@ export const register: Register = (on, options) => {
     return { text: opened.isPlaced ? 'Session panel open.' : `Session panel waits: ${opened.reason}` }
   })
 
-  on('command.run', { command: 'usage-ping' }, async $ => {
+  on('command.run', { command: 'usage-ping' }, async ($, e) => {
+    const verb = e.args.trim().toLowerCase()
+    if (verb === 'off' || verb === 'on') {
+      await setPingsOff($, verb === 'off')
+      return {
+        text:
+          verb === 'off'
+            ? 'Automatic usage pings are off in every console. `/usage-ping on` turns them back on.'
+            : 'Automatic usage pings are on again in every console.',
+      }
+    }
     const pinged = await sendPing($, true)
     if (pinged === undefined) return { text: 'Usage ping got no answer (or one is already running).' }
     const moved = sameLimits(pinged.before, pinged.after) ? 'unchanged' : 'updated'
@@ -258,7 +282,10 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.close', ($, e, next) => {
-    if (e.id === PANE) panel.isDocked = false
+    if (e.id === PANE) {
+      panel.isDocked = false
+      void refresh($)
+    }
 
     return next(e)
   })
@@ -282,6 +309,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const wasDocked = panel.isDocked
     panel.isDocked = e.props.placement === 'dock'
+    if (panel.isDocked) $.ui.status(undefined)
     if (wasDocked !== panel.isDocked) $.ui.invalidate('ui.render')
     const { Box, Text, Button } = $.ui.resolve(e)
     const view = await read($, hud)
@@ -371,7 +399,15 @@ export const register: Register = (on, options) => {
         {view.hint ? <Text> </Text> : null}
         {view.hint ? <Text dimColor wrap="wrap">{view.hint}</Text> : null}
         <Text> </Text>
-        <Button key="ping" label="ping usage now" onPress={() => void sendPing($, true)} />
+        <Box flexDirection="row">
+          <Button key="ping" label="ping usage now" onPress={() => void sendPing($, true)} />
+          <Text> </Text>
+          <Button
+            key="pings"
+            label={arePingsOff ? 'turn pings on' : 'turn pings off'}
+            onPress={() => void setPingsOff($, !arePingsOff)}
+          />
+        </Box>
       </Box>
     )
   })

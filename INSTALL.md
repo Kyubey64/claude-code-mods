@@ -99,9 +99,10 @@ If the user names a mod that is not in `mods/`, list the ones that are and ask.
 - To keep the usage figures fresh while idle, it can send **one tiny Haiku
   request** when no console has had a fresh reading for 10 minutes, and stops
   after an hour of idle readings. This uses a sliver of the user's usage
-  limits; turn it off with the *Ping for fresh usage* setting, or change
-  *Ping interval (minutes)*.
-- Commands: `/hud`, `/usage-ping`.
+  limits. `/usage-ping off` (or the panel's *turn pings off* button) stops
+  them in every console at once, `/usage-ping on` resumes; the *Ping interval
+  (minutes)* setting changes the interval.
+- Commands: `/hud`, `/usage-ping` (ping now), `/usage-ping off`, `/usage-ping on`.
 
 ## Updating and removing
 

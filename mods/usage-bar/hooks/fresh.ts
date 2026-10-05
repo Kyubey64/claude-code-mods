@@ -17,6 +17,8 @@ export const IDLE_PINGS = 6
 export const RISE_POINTS = 1
 
 export const SHARED_KEY = 'latest'
+// True in the store turns the automatic pings off in every console.
+export const PINGS_OFF_KEY = 'pingsOff'
 
 export function asShared(value: unknown): Shared | undefined {
   const v = value as Partial<Shared> | undefined
